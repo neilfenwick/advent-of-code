@@ -20,7 +20,8 @@ func main() {
 	}(file)
 
 	result := processFile(file)
-
+	result.populateAntinodeMapPart1()
+	result.trimMapToBounds(result.size.x, result.size.y)
 	antiNodeCount := result.countUniqueAntinodes()
 
 	fmt.Printf("Number of anti-nodes: %d\n", antiNodeCount)
@@ -39,7 +40,7 @@ func processFile(file io.Reader) *antiNodeMap {
 		}
 		maxYBound++
 	}
-	anm.trimMapToBounds(maxXBound, maxYBound-1)
+	anm.size = coordinate{maxXBound, maxYBound - 1}
 	return anm
 }
 
@@ -69,6 +70,7 @@ type coordinate struct {
 }
 
 type antiNodeMap struct {
+	size        coordinate
 	antennaMap  map[rune][]coordinate
 	antiNodeMap map[rune][]coordinate
 }
@@ -81,23 +83,28 @@ func createAntiNodeMap() *antiNodeMap {
 }
 
 func (anm *antiNodeMap) addAntenna(name rune, x, y int) {
-	otherAntennae, ok := anm.antennaMap[name]
-	if !ok {
-		anm.antennaMap[name] = append(anm.antennaMap[name], coordinate{x, y})
-		return
-	}
-
-	for _, otherAntenna := range otherAntennae {
-		deltaX := x - otherAntenna.x
-		deltaY := y - otherAntenna.y
-
-		antiNode1Pos := coordinate{x + deltaX, y + deltaY}
-		antiNode2Pos := coordinate{otherAntenna.x - deltaX, otherAntenna.y - deltaY}
-		antiNodeSlice := anm.antiNodeMap[name]
-		antiNodeSlice = append(antiNodeSlice, antiNode1Pos, antiNode2Pos)
-		anm.antiNodeMap[name] = antiNodeSlice
-	}
 	anm.antennaMap[name] = append(anm.antennaMap[name], coordinate{x, y})
+}
+
+func (anm *antiNodeMap) populateAntinodeMapPart1() {
+	for name := range anm.antennaMap {
+		antennae := anm.antennaMap[name]
+		if len(antennae) < 2 {
+			continue
+		}
+		for idx, coord := range antennae {
+			for _, otherAntenna := range antennae[idx+1:] {
+				deltaX := coord.x - otherAntenna.x
+				deltaY := coord.y - otherAntenna.y
+
+				antiNode1Pos := coordinate{coord.x + deltaX, coord.y + deltaY}
+				antiNode2Pos := coordinate{otherAntenna.x - deltaX, otherAntenna.y - deltaY}
+				antiNodeSlice := anm.antiNodeMap[name]
+				antiNodeSlice = append(antiNodeSlice, antiNode1Pos, antiNode2Pos)
+				anm.antiNodeMap[name] = antiNodeSlice
+			}
+		}
+	}
 }
 
 func (anm *antiNodeMap) trimMapToBounds(x, y int) {
@@ -128,4 +135,13 @@ func (anm *antiNodeMap) countUniqueAntinodes() int {
 		}
 	}
 	return len(uniqueNodes)
+}
+
+func (anm *antiNodeMap) printMap() {
+	for name, antiNodes := range anm.antiNodeMap {
+		fmt.Printf("Antenna %c\n", name)
+		for _, node := range antiNodes {
+			fmt.Printf("x: %d, y: %d\n", node.x, node.y)
+		}
+	}
 }
