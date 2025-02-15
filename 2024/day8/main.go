@@ -25,6 +25,14 @@ func main() {
 	antiNodeCount := result.countUniqueAntinodes()
 
 	fmt.Printf("Number of anti-nodes: %d\n", antiNodeCount)
+
+	file.Seek(0, 0)
+	resultPart2 := processFile(file)
+	resultPart2.populateAntinodeMapPart2()
+	result.trimMapToBounds(result.size.x, result.size.y)
+	antiNodeCountPart2 := resultPart2.countUniqueAntinodes()
+
+	fmt.Printf("Number of anti-nodes part2: %d\n", antiNodeCountPart2)
 }
 
 func processFile(file io.Reader) *antiNodeMap {
@@ -33,14 +41,14 @@ func processFile(file io.Reader) *antiNodeMap {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		maxXBound = len(line) - 1
+		maxXBound = len(line)
 		antennae := parseLine(line)
 		for _, antenna := range antennae {
 			anm.addAntenna(antenna.name, antenna.x, maxYBound)
 		}
 		maxYBound++
 	}
-	anm.size = coordinate{maxXBound, maxYBound - 1}
+	anm.size = coordinate{maxXBound, maxYBound}
 	return anm
 }
 
@@ -102,6 +110,35 @@ func (anm *antiNodeMap) populateAntinodeMapPart1() {
 				antiNodeSlice := anm.antiNodeMap[name]
 				antiNodeSlice = append(antiNodeSlice, antiNode1Pos, antiNode2Pos)
 				anm.antiNodeMap[name] = antiNodeSlice
+			}
+		}
+	}
+}
+
+func (anm *antiNodeMap) populateAntinodeMapPart2() {
+	for name := range anm.antennaMap {
+		antennae := anm.antennaMap[name]
+		if len(antennae) < 2 {
+			continue
+		}
+		for idx, antenna := range antennae {
+			for _, otherAntenna := range antennae[idx+1:] {
+				deltaX := antenna.x - otherAntenna.x
+				deltaY := antenna.y - otherAntenna.y
+
+				// test the rest of the grid for all points that have the same slope
+				for y := range anm.size.y {
+					for x := range anm.size.x {
+						p := coordinate{x, y}
+
+						// check for colinearity
+						if (p.y-otherAntenna.y)*deltaX == (p.x-otherAntenna.x)*deltaY {
+							antiNodeSlice := anm.antiNodeMap[name]
+							antiNodeSlice = append(antiNodeSlice, p)
+							anm.antiNodeMap[name] = antiNodeSlice
+						}
+					}
+				}
 			}
 		}
 	}
