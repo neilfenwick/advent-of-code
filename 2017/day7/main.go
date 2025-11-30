@@ -6,7 +6,7 @@ import (
 	"os"
 	"sort"
 
-	tree "github.com/neilfenwick/advent-of-code/data_structures"
+	data "github.com/neilfenwick/advent-of-code/data_structures"
 )
 
 func main() {
@@ -26,30 +26,42 @@ func main() {
 		discs[d.Name] = d
 	}
 
-	var t *tree.Tree
-	for name, disc := range discs {
-		var node *tree.TreeNode
+	var t *data.GenericTree[Disc]
+	nodeMap := make(map[string]*data.GenericTreeNode[Disc])
+	for _, disc := range discs {
+		var node *data.GenericTreeNode[Disc]
 		if t == nil {
-			t = tree.NewTree(tree.TreeKey{Name: disc.Name, Value: disc})
-			_, node = t.GetRoot()
+			t = data.NewGenericTree(disc)
+			node = t.Root
 		}
-
-		if node == nil {
-			node, _ = t.AppendNode(tree.TreeKey{Name: disc.Name, Value: disc})
+		if n, ok := nodeMap[disc.Name]; ok {
+			node = n
+		} else if node == nil {
+			node = &data.GenericTreeNode[Disc]{Value: disc}
+			nodeMap[disc.Name] = node
 		}
-
+		nodeMap[disc.Name] = node
 		for _, childName := range disc.Children {
 			child := discs[childName]
-			parent := tree.TreeKey{Name: name, Value: node.Key}
-			newChild := tree.TreeKey{Name: child.Name, Value: child}
-			t.AppendChild(parent, newChild)
+			childNode := nodeMap[child.Name]
+			if childNode == nil {
+				childNode = node.AddChild(child)
+				nodeMap[child.Name] = childNode
+			} else {
+				childNode.Parent = node
+				node.Children = append(node.Children, childNode)
+			}
 		}
 	}
 
-	name, _ := t.GetRoot()
-	unbalancedName, weightDiff := GetUnbalanced(t)
-	unbalancedNode, _ := t.GetNode(unbalancedName)
-	unbalancedDisc := unbalancedNode.Key.Value.(Disc)
+	root := t.Root
+	for root.Parent != nil {
+		root = root.Parent
+	}
+	name := root.Value.Name
+	unbalancedName, weightDiff := GetUnbalanced(root)
+	unbalancedNode := nodeMap[unbalancedName]
+	unbalancedDisc := unbalancedNode.Value
 
 	fmt.Printf("The bottom program is called: %s\n", name)
 	fmt.Printf("Program '%+v' is unbalanced. Its weight is %d away from what it should be.\n", unbalancedDisc, weightDiff)
@@ -58,22 +70,15 @@ func main() {
 // GetUnbalanced recursively searches down the tree (depth-first), following branches that do not
 // have Discs with a total weight equal to their siblings.
 // Returns the name of the lowest-level unbalanced Disc, with the difference in its weight
-func GetUnbalanced(t *tree.Tree) (string, int) {
-
-	rootName, _ := t.GetRoot()
-	name, weightDelta := searchForUnbalancedChildren(t, rootName)
+func GetUnbalanced(root *data.GenericTreeNode[Disc]) (string, int) {
+	name, weightDelta := searchForUnbalancedChildren(root)
 	return name, weightDelta
 }
 
-func searchForUnbalancedChildren(t *tree.Tree, startNodeName string) (string, int) {
+func searchForUnbalancedChildren(startNode *data.GenericTreeNode[Disc]) (string, int) {
 	type nodeWeights struct {
 		names  []string
 		weight int
-	}
-
-	startNode, ok := t.GetNode(startNodeName)
-	if !ok {
-		panic(fmt.Sprintf("Could not recurse into node '%s'", startNodeName))
 	}
 
 	children := startNode.Children
@@ -84,11 +89,11 @@ func searchForUnbalancedChildren(t *tree.Tree, startNodeName string) (string, in
 		weight := getNodeWeight(child)
 		if pos, ok := weightMap[weight]; ok {
 			nodeWeight := weights[pos]
-			nodeWeight.names = append(nodeWeight.names, child.Key.Name)
+			nodeWeight.names = append(nodeWeight.names, child.Value.Name)
 			weights[pos] = nodeWeight
 		} else {
 			var names []string
-			names = append(names, child.Key.Name)
+			names = append(names, child.Value.Name)
 			nodeWeight := nodeWeights{names: names, weight: weight}
 			weights = append(weights, nodeWeight)
 			weightMap[weight] = len(weights) - 1
@@ -97,7 +102,7 @@ func searchForUnbalancedChildren(t *tree.Tree, startNodeName string) (string, in
 
 	// all weights equal, exit
 	if len(weights) == 1 {
-		return startNodeName, 0
+		return startNode.Value.Name, 0
 	}
 
 	sort.Slice(weights, func(i, j int) bool {
@@ -107,7 +112,7 @@ func searchForUnbalancedChildren(t *tree.Tree, startNodeName string) (string, in
 	unbalancedName := weights[0].names[0]
 	unbalancedDelta := weights[0].weight - weights[1].weight
 
-	childNameSearch, childDelta := searchForUnbalancedChildren(t, unbalancedName)
+	childNameSearch, childDelta := searchForUnbalancedChildren(findChildByName(children, unbalancedName))
 
 	if childDelta == 0 {
 		return unbalancedName, unbalancedDelta
@@ -116,13 +121,20 @@ func searchForUnbalancedChildren(t *tree.Tree, startNodeName string) (string, in
 	return childNameSearch, childDelta
 }
 
-func getNodeWeight(node *tree.TreeNode) int {
+func findChildByName(children []*data.GenericTreeNode[Disc], name string) *data.GenericTreeNode[Disc] {
+	for _, child := range children {
+		if child.Value.Name == name {
+			return child
+		}
+	}
+	return nil
+}
+
+func getNodeWeight(node *data.GenericTreeNode[Disc]) int {
 	var weight int
 	for _, child := range node.Children {
 		weight += getNodeWeight(child)
 	}
-
-	disc := node.Key.Value.(Disc)
-	weight += disc.Weight
+	weight += node.Value.Weight
 	return weight
 }

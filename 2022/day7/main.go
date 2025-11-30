@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"os"
@@ -11,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	tree "github.com/neilfenwick/advent-of-code/data_structures"
+	data "github.com/neilfenwick/advent-of-code/data_structures"
 )
 
 func main() {
@@ -95,115 +94,126 @@ type directory struct {
 	size        int
 }
 
-func processTerminalOutput(file *os.File) *tree.Tree {
-	s := bufio.NewScanner(file)
-	var t *tree.Tree
-	var currentNode *tree.TreeNode
+func processTerminalOutput(inputFile *os.File) *data.GenericTree[any] {
+	s := bufio.NewScanner(inputFile)
+	var t *data.GenericTree[any]
+	var currentNode *data.GenericTreeNode[any]
 
 	for s.Scan() {
-		if s.Text() == "$ cd /" {
+		line := s.Text()
+
+		if line == "$ cd /" {
 			log.Println("$root")
-			t = tree.NewTree(tree.TreeKey{Name: "$root", Value: directory{name: "$root"}})
-			_, currentNode = t.GetRoot()
+			t = data.NewGenericTree(any(directory{name: "$root"}))
+			currentNode = t.Root
 			continue
 		}
 
-		if strings.HasPrefix(s.Text(), "$") {
-			processCommand(s, t, currentNode)
+		if strings.HasPrefix(line, "$ cd") {
+			var dest string
+			fmt.Sscanf(line, "$ cd %s", &dest)
+			if dest == ".." {
+				if currentNode.Parent != nil {
+					currentNode = currentNode.Parent
+				}
+			} else {
+				var found *data.GenericTreeNode[any]
+				for _, child := range currentNode.Children {
+					if dir, ok := child.Value.(directory); ok && dir.name == dest {
+						found = child
+						break
+					}
+				}
+				if found != nil {
+					currentNode = found
+				}
+			}
+		} else if strings.HasPrefix(line, "$ ls") {
+			for s.Scan() {
+				line := s.Text()
+				if strings.HasPrefix(line, "$") {
+					// This is a command line, process it in the next iteration
+					// But we already consumed it, so we need to handle it now
+					if strings.HasPrefix(line, "$ cd") {
+						var dest string
+						fmt.Sscanf(line, "$ cd %s", &dest)
+						if dest == ".." {
+							if currentNode.Parent != nil {
+								currentNode = currentNode.Parent
+							}
+						} else {
+							var found *data.GenericTreeNode[any]
+							for _, child := range currentNode.Children {
+								if dir, ok := child.Value.(directory); ok && dir.name == dest {
+									found = child
+									break
+								}
+							}
+							if found != nil {
+								currentNode = found
+							}
+						}
+					}
+					break
+				}
+				parts := strings.Fields(line)
+				if len(parts) < 2 {
+					continue
+				}
+				if parts[0] == "dir" {
+					log.Printf("Appending directory '%s'\n", parts[1])
+					dir := directory{name: parts[1]}
+					currentNode.AddChild(any(dir))
+				} else {
+					size, err := strconv.Atoi(parts[0])
+					if err == nil {
+						log.Printf("Parsing file: %s, size: %d\n", parts[1], size)
+						f := file{name: parts[1], size: size}
+						currentNode.AddChild(any(f))
+					}
+				}
+			}
 		}
 	}
 
 	return t
 }
 
-func processCommand(s *bufio.Scanner, t *tree.Tree, currentNode *tree.TreeNode) {
-	cmd := termLine{}
-	fmt.Sscanf(s.Text(), "$ %s %s", &cmd.prefix, &cmd.suffix)
-
-	switch cmd.prefix {
-	case "cd":
-		log.Printf("Changing directory to '%s'\n", cmd.suffix)
-
-		if cmd.suffix == ".." {
-			currentNode = currentNode.Parent
-		} else {
-
-			dirNode, found := currentNode.GetChild(currentNode.Key.Name + "/" + cmd.suffix)
-			if !found {
-				log.Printf("Could not find directory '%s' under '%s'", cmd.suffix, currentNode.Key.Name)
-				return
-			}
-
-			currentNode = dirNode
-		}
-		log.Printf("Current directory: '%s'\n", currentNode.Key.Name)
-
-		// The next line after a cd command must either be another cd or ls
-		s.Scan()
-		processCommand(s, t, currentNode)
-	case "ls":
-		for s.Scan() {
-			if s.Err() == io.EOF {
-				return
-			}
-			if strings.HasPrefix(s.Text(), "$") {
-				processCommand(s, t, currentNode)
-				return
-			}
-
-			line := termLine{}
-			fmt.Sscanf(s.Text(), "%s %s", &line.prefix, &line.suffix)
-
-			if strings.HasPrefix(line.prefix, "dir") {
-				log.Printf("Appending directory '%s'\n", line.suffix)
-				directory := directory{name: line.suffix}
-				t.AppendChild(
-					currentNode.Key,
-					tree.TreeKey{Name: currentNode.Key.Name + "/" + line.suffix, Value: directory},
-				)
-				continue
-			}
-
-			log.Printf("Parsing file: %v\n", line)
-			size, err := strconv.Atoi(line.prefix)
-			if err != nil {
-				log.Printf("Error parsing size %s under directory '%s'\n", line.prefix, currentNode.Key.Name)
-			}
-
-			f := file{name: line.suffix, size: size}
-			t.AppendChild(currentNode.Key, tree.TreeKey{Name: currentNode.Key.Name + "/" + line.suffix, Value: f})
-		}
+func searchDirectoriesMaxSize(fileTree *data.GenericTree[any], maxSizeThreshold int) map[string]int {
+	allDirectorySizes := make(map[string]int)
+	root := fileTree.Root
+	if rootDir, ok := root.Value.(directory); ok {
+		allDirectorySizes[rootDir.name] = 0
 	}
-}
-
-func searchDirectoriesMaxSize(fileTree *tree.Tree, maxSizeThreshold int) map[string]int {
-	allDirectorySizes := make(map[string]int, 0)
-	_, root := fileTree.GetRoot()
 	searchDirectoriesRecursive(root, allDirectorySizes)
 
-	results := make(map[string]int, 0)
+	results := make(map[string]int)
 	for key, value := range allDirectorySizes {
 		if value <= maxSizeThreshold {
 			results[key] = value
 		}
-
 	}
 
 	return results
 }
 
-func searchDirectoriesRecursive(treeNode *tree.TreeNode, directorySizeMap map[string]int) {
-	switch treeNode.Key.Value.(type) {
-	case directory:
-		for _, child := range treeNode.Children {
-			searchDirectoriesRecursive(child, directorySizeMap)
-			if child.Parent != nil {
-				size, _ := directorySizeMap[child.Key.Name]
-				directorySizeMap[child.Parent.Key.Name] += size
-			}
-		}
-	case file:
-		size := treeNode.Key.Value.(file).size
-		directorySizeMap[treeNode.Parent.Key.Name] += size
+func searchDirectoriesRecursive(treeNode *data.GenericTreeNode[any], directorySizeMap map[string]int) {
+	dir, ok := treeNode.Value.(directory)
+	if !ok {
+		return // skip non-directory nodes
 	}
+
+	totalSize := 0
+	for _, child := range treeNode.Children {
+		switch childVal := child.Value.(type) {
+		case directory:
+			searchDirectoriesRecursive(child, directorySizeMap)
+			if size, ok := directorySizeMap[childVal.name]; ok {
+				totalSize += size
+			}
+		case file:
+			totalSize += childVal.size
+		}
+	}
+	directorySizeMap[dir.name] = totalSize
 }
