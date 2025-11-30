@@ -92,8 +92,8 @@ func (r *ruckSack) calculatePriorityItem() {
 					}
 					break
 				} else {
-          goto foundPriorityItem
-        }
+					goto foundPriorityItem
+				}
 			} else if currentRune > testRune {
 				j++
 				continue
